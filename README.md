@@ -1,4 +1,4 @@
-# homflow-proxy
+# hom-proxy
 ======================
 
 A simple proxy service.
