@@ -1,21 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author  : hombin
-# @Time    : 2023/2/6 17:34
-# @File    : sample.py
-# @Desc    :
-
-
-# !/usr/bin/env python
-# -*- coding: utf-8 -*-
-"""
-    simple-http-proxy ( https://github.com/WengChaoxi/simple-http-proxy )
-    ~ ~ ~ ~ ~ ~
-    一个简单的http代理
-
-    :copyright: (c) 2021 by WengChaoxi.
-    :license: MIT, see LICENSE for more details.
-"""
-from __future__ import print_function
+# @Time    : 2022/2/2 02:22
+# @File    : http_proxy.py
+# @Desc    : https://github.com/wengchaoxi/simple-http-proxy/blob/main/simple_http_proxy.py
 
 import socket
 import select
@@ -23,12 +10,13 @@ import time
 
 
 def debug(tag, msg):
+    """格式化输出"""
     print('[%s] %s' % (tag, msg))
 
 
 class HttpRequestPacket(object):
     """
-    HTTP请求包
+    HTTP 请求包
     """
 
     def __init__(self, data):
@@ -46,7 +34,7 @@ class HttpRequestPacket(object):
 
         # 请求行 Request-Line
         self.req_line = data[:i0]
-        self.method, self.req_uri, self.version = self.req_line.split()  # 请求行由method、request uri、version组成
+        self.method, self.req_uri, self.version = self.req_line.split()  # 请求行由 method、request uri、version 组成
 
         # 请求头域 Request Header Fields
         self.req_header = data[i0 + 2:i1]
@@ -62,7 +50,7 @@ class HttpRequestPacket(object):
 
 class SimpleHttpProxy(object):
     """
-    简单的HTTP代理
+    简单的 HTTP 代理
     客户端(client) <=> 代理端(proxy) <=> 服务端(server)
     """
 
@@ -76,8 +64,8 @@ class SimpleHttpProxy(object):
         参数：delay 数据转发延迟，单位ms，默认1ms
         """
         self.socket_proxy = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket_proxy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,
-                                     1)  # 将SO_REUSEADDR标记为True, 当socket关闭后，立刻回收该socket的端口
+        # 将 SO_REUSEADDR 标记为True, 当 socket 关闭后，立刻回收该 socket 的端口
+        self.socket_proxy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket_proxy.bind((host, port))
         self.socket_proxy.listen(listen)
 
@@ -91,19 +79,20 @@ class SimpleHttpProxy(object):
     def __del__(self):
         self.socket_proxy.close()
 
-    def __connect(self, host, port):
+    @staticmethod
+    def __connect(host, port):
         """
-        解析DNS得到套接字地址并与之建立连接
-        参数：host 主机
-        参数：port 端口
-        返回：与目标主机建立连接的套接字
+        解析 DNS 得到 套接字地址 并与之建立连接
+        :param host: 主机
+        :param port: 端口
+        :return: 与目标主机建立连接的 套接字
         """
-        # 解析DNS获取对应协议簇、socket类型、目标地址
+        # 解析 DNS 获取对应协议簇、socket 类型、目标地址
         # getaddrinfo -> [(family, sockettype, proto, canonname, target_addr),]
         (family, sockettype, _, _, target_addr) = socket.getaddrinfo(host, port)[0]
 
         tmp_socket = socket.socket(family, sockettype)
-        tmp_socket.setblocking(0)
+        tmp_socket.setblocking(False)
         tmp_socket.settimeout(5)
         tmp_socket.connect(target_addr)
         return tmp_socket
@@ -113,62 +102,61 @@ class SimpleHttpProxy(object):
         代理核心程序
         参数：socket_client 代理端与客户端之间建立的套接字
         """
-        # 接收客户端请求数据
+        # 接收 客户端请求数据
         req_data = socket_client.recv(self.socket_recv_bufsize)
         if req_data == b'':
             return
 
-        # 解析http请求数据
+        # 解析 http 请求数据
         http_packet = HttpRequestPacket(req_data)
 
-        # 获取服务端host、port
+        # 获取服务端 host、port
         if b':' in http_packet.host:
             server_host, server_port = http_packet.host.split(b':')
         else:
             server_host, server_port = http_packet.host, 80
 
-        # 修正http请求数据
+        # 修正 http 请求数据
         tmp = b'%s//%s' % (http_packet.req_uri.split(b'//')[0], http_packet.host)
         req_data = req_data.replace(tmp, b'')
 
         # HTTP
         if http_packet.method in [b'GET', b'POST', b'PUT', b'DELETE', b'HEAD']:
             socket_server = self.__connect(server_host, server_port)  # 建立连接
-            socket_server.send(req_data)  # 将客户端请求数据发给服务端
+            socket_server.send(req_data)  # 将 客户端请求数据 发给 服务端
 
-        # HTTPS，会先通过CONNECT方法建立TCP连接
+        # HTTPS，会先通过 CONNECT 方法 建立 TCP 连接
         elif http_packet.method == b'CONNECT':
             socket_server = self.__connect(server_host, server_port)  # 建立连接
 
-            success_msg = b'%s %d Connection Established\r\nConnection: close\r\n\r\n' \
-                          % (http_packet.version, 200)
+            success_msg = b'%s %d Connection Established\r\nConnection: close\r\n\r\n' % (http_packet.version, 200)
             socket_client.send(success_msg)  # 完成连接，通知客户端
 
             # 客户端得知连接建立，会将真实请求数据发送给代理服务端
             req_data = socket_client.recv(self.socket_recv_bufsize)  # 接收客户端真实数据
             socket_server.send(req_data)  # 将客户端真实请求数据发给服务端
 
-        # 使用select异步处理，不阻塞
+        # 使用 select 异步处理，不阻塞
         self.__nonblocking(socket_client, socket_server)
 
     def __nonblocking(self, socket_client, socket_server):
         """
-        使用select实现异步处理数据
-        参数：socket_client 代理端与客户端之间建立的套接字
-        参数：socket_server 代理端与服务端之间建立的套接字
+        使用 select 实现 异步处理数据
+        参数：socket_client 代理端 与 客户端 之间建立的 套接字
+        参数：socket_server 代理端 与 服务端 之间建立的 套接字
         """
         _rlist = [socket_client, socket_server]
         is_recv = True
         while is_recv:
             try:
                 # rlist, wlist, elist = select.select(_rlist, _wlist, _elist, [timeout])
-                # 参数1：当列表_rlist中的文件描述符fd状态为readable时，fd将被添加到rlist中
-                # 参数2：当列表_wlist中存在文件描述符fd时，fd将被添加到wlist
-                # 参数3：当列表_xlist中的文件描述符fd发生错误时，fd将被添加到elist
-                # 参数4：超时时间timeout
-                #  1) 当timeout==None时，select将一直阻塞，直到监听的文件描述符fd发生变化时返回
-                #  2) 当timeout==0时，select不会阻塞，无论文件描述符fd是否有变化，都立刻返回
-                #  3) 当timeout>0时，若文件描述符fd无变化，select将被阻塞timeout秒再返回
+                # 参数1：当列表 _rlist 中的文件描述符fd 状态为readable时，fd 将被添加到 rlist
+                # 参数2：当列表 _wlist 中存在文件描述符fd 时，fd 将被添加到 wlist
+                # 参数3：当列表 _xlist 中的文件描述符fd 发生错误时，fd 将被添加到 elist
+                # 参数4：超时时间 timeout
+                #  1) 当 timeout==None 时，select 将一直阻塞，直到监听的 文件描述符fd 发生变化时返回
+                #  2) 当 timeout==0 时，select 不会阻塞，无论 文件描述符fd 是否有变化，都立刻返回
+                #  3) 当 timeout>0 时，若 文件描述符fd 无变化，select 将被阻塞 timeout 秒再返回
                 rlist, _, elist = select.select(_rlist, [], [], 2)
                 if elist:
                     break
@@ -180,18 +168,19 @@ class SimpleHttpProxy(object):
                         is_recv = False
                         continue
 
-                    # socket_client状态为readable, 当前接收的数据来自客户端
+                    # socket_client 状态为 readable, 当前接收的数据来自 客户端
                     if tmp_socket is socket_client:
-                        socket_server.send(data)  # 将客户端请求数据发往服务端
+                        socket_server.send(data)  # 将 客户端请求数据 发往 服务端
                         # debug('proxy', 'client -> server')
 
-                    # socket_server状态为readable, 当前接收的数据来自服务端
+                    # socket_server 状态为 readable, 当前接收的数据 来自 服务端
                     elif tmp_socket is socket_server:
-                        socket_client.send(data)  # 将服务端响应数据发往客户端
+                        socket_client.send(data)  # 将 服务端响应数据 发往 客户端
                         # debug('proxy', 'client <- server')
 
-                time.sleep(self.delay)  # 适当延迟以降低CPU占用
+                time.sleep(self.delay)  # 适当延迟以降低 CPU 占用
             except Exception as e:
+                debug("select", e)
                 break
 
         socket_client.close()
@@ -199,7 +188,7 @@ class SimpleHttpProxy(object):
 
     def client_socket_accept(self):
         """
-        获取已经与代理端建立连接的客户端套接字，如无则阻塞，直到可以获取一个建立连接套接字
+        获取 已经与代理端建立连接的 客户端套接字，如无则阻塞，直到可以获取一个建立连接套接字
         返回：socket_client 代理端与客户端之间建立的套接字
         """
         socket_client, _ = self.socket_proxy.accept()
@@ -208,8 +197,8 @@ class SimpleHttpProxy(object):
     def handle_client_request(self, socket_client):
         try:
             self.__proxy(socket_client)
-        except:
-            pass
+        except Exception as e:
+            debug("client", e)
 
     def start(self):
         try:
@@ -225,27 +214,39 @@ class SimpleHttpProxy(object):
 
 
 if __name__ == '__main__':
+    import sys
+    import getopt
+
     # 默认参数
-    host, port, listen, bufsize, delay = '0.0.0.0', 8080, 10, 8, 1
+    _host, _port, _listen, _bufsize, _delay = '0.0.0.0', 8080, 10, 8, 1
 
-    import sys, getopt
-
+    # 获取 命令行 参数
     try:
         opts, _ = getopt.getopt(sys.argv[1:], 'h:p:l:b:d:', ['host=', 'port=', 'listen=', 'bufsize=', 'delay='])
         for opt, arg in opts:
             if opt in ('-h', '--host'):
-                host = arg
+                _host = arg
             elif opt in ('-p', '--port'):
-                port = int(arg)
+                _port = int(arg)
             elif opt in ('-l', '--listen'):
-                listen = int(arg)
+                _listen = int(arg)
             elif opt in ('-b', '--bufsize'):
-                bufsize = int(arg)
+                _bufsize = int(arg)
             elif opt in ('-d', '--delay'):
-                delay = float(arg)
-    except:
+                _delay = float(arg)
+
+            # 复杂度增加
+            # host = arg if opt in ("-h", "--host") else '0.0.0.0'
+            # port = int(arg) if opt in ("-p", "--port") else 8080
+            # listen = int(arg) if opt in ("-l", "--listen") else 10
+            # bufsize = int(arg) if opt in ("-b", "--bufsize") else 8
+            # delay = float(arg) if opt in ("-d", "--delay") else 1
+
+    except Exception as e:
+        debug("ERROR", e.args[0])
         debug('error', 'read the readme.md first!')
         sys.exit()
 
     # 启动代理
-    SimpleHttpProxy(host, port, listen, bufsize, delay).start()
+    SimpleHttpProxy(_host, _port, _listen, _bufsize, _delay).start()
+
